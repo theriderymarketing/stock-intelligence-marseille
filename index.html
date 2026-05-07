@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Ridery - Stock Intelligence</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-body: #f4f6f8;
+            --bg-card: #ffffff;
+            --primary: #2c3e50;
+            --border: #e1e4e8;
+            --debutant: #1abc9c;
+            --intermediaire: #f1c40f;
+            --confirme: #9b59b6;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --success: #27ae60;
+        }
+
+        body { font-family: 'Inter', -apple-system, sans-serif; background-color: var(--bg-body); margin: 0; color: #333; }
+        header { background: #fff; padding: 15px 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1000; }
+        .container { padding: 20px; max-width: 1600px; margin: 0 auto; }
+
+        /* Drop Zone Styles */
+        #dropZone {
+            border: 2px dashed #3498db;
+            padding: 30px;
+            text-align: center;
+            border-radius: 12px;
+            background: #fff;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        #dropZone.active { border-color: var(--success); background: #f0fff0; }
+        #dropZone.compact { padding: 15px; border-width: 1px; }
+        #dropZone h2 { margin: 0; font-size: 18px; color: #3498db; }
+        #dropZone p { margin: 5px 0 0; font-size: 13px; color: #7f8c8d; }
+
+        /* Grid Layout */
+        .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); height: fit-content; }
+        .card-title { font-size: 14px; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #7f8c8d; }
+
+        /* Risk Widgets */
+        .risk-card { border-top: 5px solid #eee; }
+        .risk-card.high { border-top-color: var(--danger); }
+        .risk-card.med { border-top-color: var(--warning); }
+        .risk-card.low { border-top-color: var(--success); }
+
+        .coverage-status { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 10px; }
+
+        /* Level Bar */
+        .level-bar { height: 10px; display: flex; border-radius: 5px; overflow: hidden; margin: 15px 0; background: #eee; }
+        .level-segment { height: 100%; transition: width 0.5s ease; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 12px; font-size: 12px; color: #888; border-bottom: 1px solid var(--border); }
+        td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+        .badge-deb { background: rgba(26, 188, 156, 0.1); color: #16a085; }
+        .badge-int { background: rgba(243, 156, 18, 0.1); color: #d35400; }
+        .badge-pro { background: rgba(155, 89, 182, 0.1); color: #8e44ad; }
+
+        .advice-box { background: #f8f9fa; border-left: 4px solid var(--primary); padding: 12px; margin-top: 10px; border-radius: 0 8px 8px 0; font-size: 12px; line-height: 1.4; }
+
+        .hidden { display: none; }
+        #fileInput { display: none; }
+
+        .search-box {
+            width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 15px; box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div style="display:flex; align-items:center;">
+            <img src="https://theridery.com/cdn/shop/files/logo-ridery-black_180x.png" height="30" style="margin-right:20px;">
+            <h3 style="margin:0">Stock Intelligence & Risk</h3>
+        </div>
+        <div id="lastUpdate" style="font-size:12px; color:#7f8c8d;">En attente de fichier...</div>
+    </header>
+
+    <div class="container">
+        <!-- Persistent Drop Zone -->
+        <div id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <h2 id="dropTitle">📁 Glisser-déposer le fichier CSV ici</h2>
+            <p id="dropSub">Ou cliquez pour parcourir vos fichiers</p>
+            <input type="file" id="fileInput" accept=".csv">
+        </div>
+
+        <div id="content" class="hidden">
+            <!-- Summary Row -->
+            <div class="dashboard-grid">
+                <div class="card risk-card" id="riskDeb">
+                    <div class="card-title" style="color:var(--debutant)">Profil Débutant (1-10)</div>
+                    <div id="statDeb"></div>
+                    <div class="advice-box" id="adviceDeb"></div>
+                </div>
+                <div class="card risk-card" id="riskInt">
+                    <div class="card-title" style="color:var(--warning)">Profil Intermédiaire (11-25)</div>
+                    <div id="statInt"></div>
+                    <div class="advice-box" id="adviceInt"></div>
+                </div>
+                <div class="card risk-card" id="riskPro">
+                    <div class="card-title" style="color:var(--confirme)">Profil Confirmé (>30)</div>
+                    <div id="statPro"></div>
+                    <div class="advice-box" id="advicePro"></div>
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <!-- Detailed Table -->
+                <div class="card">
+                    <div class="card-title">Inventaire & Recommandations</div>
+                    <input type="text" id="searchInput" class="search-box" placeholder="Rechercher un produit, une marque ou un profil...">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Produit</th>
+                                <th>Niveau</th>
+                                <th>Catégorie</th>
+                                <th>Taille</th>
+                                <th>Stock</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+
+                <!-- Global KPI -->
+                <div class="card">
+                    <div class="card-title">Santé Globale du Stock</div>
+                    <div class="level-bar">
+                        <div id="barDeb" class="level-segment" style="background:var(--debutant)"></div>
+                        <div id="barInt" class="level-segment" style="background:var(--warning)"></div>
+                        <div id="barPro" class="level-segment" style="background:var(--confirme)"></div>
+                    </div>
+                    <div style="font-size:28px; font-weight:800; margin: 15px 0;" id="stockValue">0 €</div>
+                    <div id="globalAlert" style="padding:15px; border-radius:10px; font-weight:600; font-size:13px;"></div>
+                    
+                    <div style="margin-top:20px; font-size:12px; color:#7f8c8d;">
+                        <p>● Turquoise : Débutant</p>
+                        <p>● Jaune : Intermédiaire</p>
+                        <p>● Violet : Confirmé</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const content = document.getElementById('content');
+        const dropZone = document.getElementById('dropZone');
+        const dropTitle = document.getElementById('dropTitle');
+        const dropSub = document.getElementById('dropSub');
+
+        // Drag and drop handlers
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('active'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('active'), false);
+        });
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            const file = files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true, skipEmptyLines: true,
+                    complete: (results) => {
+                        processData(results.data);
+                        document.getElementById('lastUpdate').innerText = "Dernière MAJ : " + new Date().toLocaleTimeString();
+                        dropZone.classList.add('compact');
+                        dropTitle.innerText = "🔄 Déposer un nouveau fichier pour mettre à jour";
+                        dropSub.innerText = "Fichier actuel : " + file.name;
+                    }
+                });
+            }
+        }
+
+        function processData(data) {
+            content.classList.remove('hidden');
+
+            const stats = {
+                totalValue: 0,
+                items: [],
+                coverage: {
+                    debutant: { Planches: 0, Ailes: 0, Foils: 0 },
+                    inter: { Planches: 0, Ailes: 0, Foils: 0 },
+                    confirme: { Planches: 0, Ailes: 0, Foils: 0 }
+                }
+            };
+
+            data.forEach(item => {
+                const title = (item.Product || "").toLowerCase();
+                const variant = (item.Variant || "").toLowerCase();
+                const stock = parseInt(item.Available) || 0;
+                const price = parseFloat(item['Retail price']) || 0;
+
+                if (stock <= 0) return;
+
+                let cat = null;
+                if ((title.includes('m2') || variant.includes('m2')) && !title.includes('kite')) cat = "Ailes";
+                else if (title.includes('rocket') || title.includes('beluga') || title.includes('sky rider') || title.includes('cruzader') || title.includes('aria') || title.includes('fly')) cat = "Planches";
+                else if (title.includes('mât') || title.includes('mat ') || title.includes('aile avant') || title.includes('avion') || title.includes('fuselage') || title.includes('phantom') || title.includes('jam')) cat = "Foils";
+
+                if (cat) {
+                    const sizeData = extractSize(item.Product, item.Variant, cat);
+                    const level = determineLevel(cat, sizeData.val);
+                    
+                    stats.totalValue += (price * stock);
+                    stats.coverage[level.key][cat] += stock;
+                    
+                    stats.items.push({
+                        name: item.Product,
+                        cat: cat,
+                        size: sizeData.label,
+                        stock: stock,
+                        level: level
+                    });
+                }
+            });
+
+            updateUI(stats);
+        }
+
+        function extractSize(product, variant, cat) {
+            const full = (product + " " + variant).toLowerCase();
+            if (cat === "Ailes") {
+                const m = full.match(/(\d+[,.]?\d?)\s?m2/);
+                return m ? { val: parseFloat(m[1].replace(',', '.')), label: m[1] + "m²" } : { val: 0, label: "-" };
+            }
+            if (cat === "Planches") {
+                const m = full.match(/(\d+)\s?l/);
+                return m ? { val: parseInt(m[1]), label: m[1] + "L" } : { val: 0, label: "-" };
+            }
+            if (cat === "Foils") {
+                const m = full.match(/(\d+)\s?cm[²2]/);
+                return m ? { val: parseInt(m[1]), label: m[1] + "cm²" } : { val: 0, label: "-" };
+            }
+            return { val: 0, label: "-" };
+        }
+
+        function determineLevel(cat, val) {
+            if (cat === "Planches") {
+                if (val >= 110) return { key: 'debutant', label: '1-10 sessions', badge: 'badge-deb' };
+                if (val >= 75) return { key: 'inter', label: '11-25 sessions', badge: 'badge-int' };
+                return { key: 'confirme', label: '> 30 sessions', badge: 'badge-pro' };
+            }
+            if (cat === "Foils") {
+                if (val >= 1500) return { key: 'debutant', label: '1-10 sessions', badge: 'badge-deb' };
+                if (val >= 1200) return { key: 'inter', label: '11-25 sessions', badge: 'badge-int' };
+                return { key: 'confirme', label: '> 30 sessions', badge: 'badge-pro' };
+            }
+            if (cat === "Ailes") {
+                if (val >= 5.5) return { key: 'debutant', label: '1-10 sessions', badge: 'badge-deb' };
+                if (val >= 4.0) return { key: 'inter', label: '11-25 sessions', badge: 'badge-int' };
+                return { key: 'confirme', label: '> 30 sessions', badge: 'badge-pro' };
+            }
+            return { key: 'inter', label: 'Polyvalent', badge: 'badge-int' };
+        }
+
+        function updateUI(stats) {
+            document.getElementById('stockValue').innerText = Math.round(stats.totalValue).toLocaleString() + ' €';
+            
+            analyzeRisk('debutant', stats.coverage.debutant, 'riskDeb', 'statDeb', 'adviceDeb');
+            analyzeRisk('inter', stats.coverage.inter, 'riskInt', 'statInt', 'adviceInt');
+            analyzeRisk('confirme', stats.coverage.confirme, 'riskPro', 'statPro', 'advicePro');
+
+            const total = stats.items.reduce((a, b) => a + b.stock, 0);
+            const deb = stats.items.filter(i => i.level.key === 'debutant').reduce((a, b) => a + b.stock, 0);
+            const inter = stats.items.filter(i => i.level.key === 'inter').reduce((a, b) => a + b.stock, 0);
+            const pro = stats.items.filter(i => i.level.key === 'confirme').reduce((a, b) => a + b.stock, 0);
+
+            document.getElementById('barDeb').style.width = (deb / total * 100) + '%';
+            document.getElementById('barInt').style.width = (inter / total * 100) + '%';
+            document.getElementById('barPro').style.width = (pro / total * 100) + '%';
+
+            renderTable(stats.items);
+
+            document.getElementById('searchInput').oninput = (e) => {
+                const v = e.target.value.toLowerCase();
+                renderTable(stats.items.filter(i => i.name.toLowerCase().includes(v) || i.level.label.toLowerCase().includes(v)));
+            };
+        }
+
+        function analyzeRisk(key, cov, cardId, statId, adviceId) {
+            const card = document.getElementById(cardId);
+            const stat = document.getElementById(statId);
+            const advice = document.getElementById(adviceId);
+
+            let missing = [];
+            if (cov.Planches === 0) missing.push('Planches');
+            if (cov.Ailes === 0) missing.push('Ailes');
+            if (cov.Foils === 0) missing.push('Foils');
+
+            let weak = [];
+            if (cov.Planches > 0 && cov.Planches < 3) weak.push('Planches');
+            if (cov.Ailes > 0 && cov.Ailes < 3) weak.push('Ailes');
+            if (cov.Foils > 0 && cov.Foils < 3) weak.push('Foils');
+
+            stat.innerHTML = `
+                <div class="coverage-status"><div class="dot" style="background:${cov.Planches > 0 ? 'var(--success)' : 'var(--danger)'}"></div> Planches: ${cov.Planches}</div>
+                <div class="coverage-status"><div class="dot" style="background:${cov.Ailes > 0 ? 'var(--success)' : 'var(--danger)'}"></div> Ailes: ${cov.Ailes}</div>
+                <div class="coverage-status"><div class="dot" style="background:${cov.Foils > 0 ? 'var(--success)' : 'var(--danger)'}"></div> Foils: ${cov.Foils}</div>
+            `;
+
+            if (missing.length > 0) {
+                card.className = 'card risk-card high';
+                advice.innerHTML = `⚠️ <b>RISQUE CRITIQUE :</b> Pack complet impossible. Manque : <b>${missing.join(', ')}</b>.`;
+            } else if (weak.length > 0) {
+                card.className = 'card risk-card med';
+                advice.innerHTML = `🔔 <b>STOCK FAIBLE :</b> Choix limité en <b>${weak.join(', ')}</b>.`;
+            } else {
+                card.className = 'card risk-card low';
+                advice.innerHTML = `✅ <b>SANTÉ OK :</b> Stock équilibré pour ce profil.`;
+            }
+        }
+
+        function renderTable(items) {
+            const body = document.getElementById('tableBody');
+            body.innerHTML = '';
+            items.forEach(i => {
+                body.innerHTML += `
+                    <tr>
+                        <td><b>${i.name}</b></td>
+                        <td><span class="badge ${i.level.badge}">${i.level.label}</span></td>
+                        <td>${i.cat}</td>
+                        <td>${i.size}</td>
+                        <td style="text-align:center; font-weight:800">${i.stock}</td>
+                        <td>${i.stock < 2 ? '<span style="color:var(--danger)">Urgent</span>' : 'OK'}</td>
+                    </tr>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
