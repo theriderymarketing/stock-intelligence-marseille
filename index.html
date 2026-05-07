@@ -265,7 +265,7 @@
                 return m ? { val: parseInt(m[1]), label: m[1] + "L" } : { val: 0, label: "-" };
             }
             if (cat === "Foils") {
-                const m = full.match(/(\d+)\s?cm[²2]/);
+                const m = full.match(/(\d+)\s?(cm[²2]|m[²2])/);
                 return m ? { val: parseInt(m[1]), label: m[1] + "cm²" } : { val: 0, label: "-" };
             }
             return { val: 0, label: "-" };
